@@ -157,6 +157,25 @@ const validateIBAN = (raw) => {
 // result -> estado visual del input
 const stateOf = (res) => (res && res.ok === false ? "error" : res && res.ok === true ? "ok" : undefined);
 
+// Dirección postal desglosada en campos.
+const emptyAddress = () => ({ calle: "", numero: "", poblacion: "", cp: "" });
+
+const formatCP = (s = "") => String(s).replace(/\D+/g, "").slice(0, 5);
+
+const validateCP = (raw) => {
+  const s = String(raw || "").replace(/\D+/g, "");
+  if (!s) return null;
+  return /^\d{5}$/.test(s) ? null : { ok: false, msg: "El código postal debe tener 5 dígitos" };
+};
+
+const addressToText = (a) => {
+  if (!a || typeof a !== "object") return a ? String(a) : "—";
+  const l1 = [a.calle, a.numero].filter(Boolean).join(", ");
+  const l2 = [a.cp, a.poblacion].filter(Boolean).join(" ");
+  const full = [l1, l2].filter(Boolean).join(" · ");
+  return full || "—";
+};
+
 /* ============================================================================
    COMPONENTES DE UI
    ========================================================================== */
@@ -345,6 +364,33 @@ const Grid = ({ children, cols = 2 }) => (
   <div className={`grid grid-cols-1 ${cols === 2 ? "md:grid-cols-2" : ""} gap-x-5 gap-y-5`}>{children}</div>
 );
 
+// Dirección postal desglosada: Calle · Número · Población · Código postal
+function AddressFields({ label = "Dirección", value, onChange }) {
+  const a = value && typeof value === "object" ? value : emptyAddress();
+  const set = (k) => (val) => onChange({ ...a, [k]: val });
+  const cpRes = validateCP(a.cp);
+  return (
+    <div className="md:col-span-2">
+      <p className="text-[13px] font-semibold text-gray-700 mb-2.5">{label}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+        <Field label="Calle" className="md:col-span-2">
+          <TextInput value={a.calle} onChange={set("calle")} sanitize={toTitleCase} placeholder="Nombre de la vía (calle, avenida, plaza…)" />
+        </Field>
+        <Field label="Número">
+          <TextInput value={a.numero} onChange={set("numero")} sanitize={cleanSpaces} placeholder="Nº, piso, puerta…" />
+        </Field>
+        <Field label="Código postal">
+          <TextInput value={a.cp} onChange={set("cp")} sanitize={formatCP} inputMode="numeric" placeholder="46000" state={stateOf(cpRes)} />
+          <Validity result={cpRes} />
+        </Field>
+        <Field label="Población" className="md:col-span-2">
+          <TextInput value={a.poblacion} onChange={set("poblacion")} sanitize={toTitleCase} placeholder="Localidad / municipio" />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================================
    AVISO DE ARRAS
    ========================================================================== */
@@ -384,19 +430,19 @@ function ArrasWarning({ arras, precio }) {
 
 const emptyBuyer = () => ({
   nombre: "", apellidos: "", facturaNombre: "", facturaImporte: "", dni: "",
-  estadoCivil: "", telefono: "", email: "", direccion: "",
+  estadoCivil: "", telefono: "", email: "", direccion: emptyAddress(),
 });
 
 const emptySeller = () => ({
   nombre: "", porcentaje: "", facturaNombre: "", facturaImporte: "", dni: "",
-  telefono: "", email: "", estadoCivil: "", cuenta: "",
+  telefono: "", email: "", estadoCivil: "", direccion: emptyAddress(), cuenta: "",
 });
 
 const initialBuyerForm = () => ({
   agenteComprador: "", agenteVendedor: "", referencia: "", asesor: "", asesorMail: "", origen: "",
   compradores: [emptyBuyer()],
   financiacion: "", porcentaje: "", hipotecaAprobada: "", dependeTasacion: "",
-  direccion: "", datosRegistrales: "", refCatastral: "",
+  direccion: emptyAddress(), datosRegistrales: "", refCatastral: "",
   elementos: { garaje: false, trastero: false, otro: false, otroTexto: "" },
   precioVenta: "", arras: "", amueblada: "", inventario: "",
   fechaFirma: "", fechaEscritura: "", notaria: "", suministros: "",
@@ -406,7 +452,7 @@ const initialBuyerForm = () => ({
 const initialSellerForm = () => ({
   agenteComprador: "", agenteVendedor: "", referencia: "", origen: "", origenExplica: "",
   vendedores: [emptySeller()],
-  direccion: "", datosRegistrales: "", refCatastral: "", vpo: "",
+  direccion: emptyAddress(), datosRegistrales: "", refCatastral: "", vpo: "",
   elementos: { garaje: false, trastero: false, otro: false, otroTexto: "" },
   derramas: "", derramasTexto: "", fondoManiobra: "",
   precioVenta: "", precioVivienda: "", precioGaraje: "", precioTrastero: "",
@@ -491,9 +537,7 @@ function BuyerForm({ data, set }) {
               <Field label="Email">
                 <TextInput value={b.email} onChange={updBuyer(i, "email")} sanitize={(v) => v.trim().toLowerCase()} type="email" placeholder="email@ejemplo.com" />
               </Field>
-              <Field label="Dirección" className="md:col-span-2">
-                <TextInput value={b.direccion} onChange={updBuyer(i, "direccion")} sanitize={toTitleCase} placeholder="Calle, número, población, CP" />
-              </Field>
+              <AddressFields label="Dirección del comprador" value={b.direccion} onChange={updBuyer(i, "direccion")} />
               <Field label="Nombre y apellidos para factura">
                 <TextInput value={b.facturaNombre} onChange={updBuyer(i, "facturaNombre")} sanitize={toUpper} placeholder="Titular de la factura" />
               </Field>
@@ -529,9 +573,7 @@ function BuyerForm({ data, set }) {
 
       <SectionCard icon={Home} title="Datos del inmueble y contrato">
         <Grid>
-          <Field label="Dirección" className="md:col-span-2">
-            <TextInput value={data.direccion} onChange={upd("direccion")} sanitize={toTitleCase} placeholder="Dirección del inmueble" />
-          </Field>
+          <AddressFields label="Dirección del inmueble" value={data.direccion} onChange={upd("direccion")} />
           <Field label="Datos registrales" className="md:col-span-2">
             <Textarea value={data.datosRegistrales} onChange={upd("datosRegistrales")} placeholder="Tomo, libro, folio, finca, inscripción…" />
           </Field>
@@ -658,6 +700,7 @@ function SellerForm({ data, set }) {
               <Field label="Email">
                 <TextInput value={s.email} onChange={updSeller(i, "email")} sanitize={(v) => v.trim().toLowerCase()} type="email" placeholder="email@ejemplo.com" />
               </Field>
+              <AddressFields label="Dirección del vendedor" value={s.direccion} onChange={updSeller(i, "direccion")} />
               <Field label="Nombre y apellidos para factura">
                 <TextInput value={s.facturaNombre} onChange={updSeller(i, "facturaNombre")} sanitize={toUpper} placeholder="Titular de la factura" />
               </Field>
@@ -678,9 +721,7 @@ function SellerForm({ data, set }) {
 
       <SectionCard icon={Home} title="Datos del inmueble y condiciones">
         <Grid>
-          <Field label="Dirección" className="md:col-span-2">
-            <TextInput value={data.direccion} onChange={upd("direccion")} sanitize={toTitleCase} placeholder="Dirección del inmueble" />
-          </Field>
+          <AddressFields label="Dirección del inmueble" value={data.direccion} onChange={upd("direccion")} />
           <Field label="Datos registrales" className="md:col-span-2">
             <Textarea value={data.datosRegistrales} onChange={upd("datosRegistrales")} placeholder="Tomo, libro, folio, finca, inscripción…" />
           </Field>
@@ -810,7 +851,7 @@ function buildBuyerPayload(d) {
     lines.push(`Estado civil y régimen: ${v(b.estadoCivil)}`);
     lines.push(`Teléfono: ${v(b.telefono)}`);
     lines.push(`Email: ${v(b.email)}`);
-    lines.push(`Dirección: ${v(b.direccion)}`);
+    lines.push(`Dirección: ${addressToText(b.direccion)}`);
     lines.push(`Factura a nombre de: ${v(b.facturaNombre)} | Importe: ${b.facturaImporte ? eur(b.facturaImporte) : "—"}`);
     lines.push("");
   });
@@ -821,7 +862,7 @@ function buildBuyerPayload(d) {
   lines.push(`¿Depende de tasación?: ${v(d.dependeTasacion)}`);
   lines.push("");
   lines.push("[INMUEBLE Y CONTRATO]");
-  lines.push(`Dirección: ${v(d.direccion)}`);
+  lines.push(`Dirección: ${addressToText(d.direccion)}`);
   lines.push(`Datos registrales: ${v(d.datosRegistrales)}`);
   lines.push(`Ref. catastral: ${v(d.refCatastral)}`);
   lines.push(`Elementos adicionales: ${elementosToText(d.elementos)}`);
@@ -889,12 +930,13 @@ function buildSellerPayload(d) {
     lines.push(`Estado civil y régimen: ${v(s.estadoCivil)}`);
     lines.push(`Teléfono: ${v(s.telefono)}`);
     lines.push(`Email: ${v(s.email)}`);
+    lines.push(`Dirección: ${addressToText(s.direccion)}`);
     lines.push(`Factura a nombre de: ${v(s.facturaNombre)} | Importe: ${s.facturaImporte ? eur(s.facturaImporte) : "—"}`);
     lines.push(`Cuenta arras (IBAN): ${v(s.cuenta)}`);
     lines.push("");
   });
   lines.push("[INMUEBLE Y CONDICIONES]");
-  lines.push(`Dirección: ${v(d.direccion)}`);
+  lines.push(`Dirección: ${addressToText(d.direccion)}`);
   lines.push(`Datos registrales: ${v(d.datosRegistrales)}`);
   lines.push(`Ref. catastral: ${v(d.refCatastral)}`);
   lines.push(`VPO: ${v(d.vpo)}`);
@@ -926,7 +968,7 @@ function buildSellerPayload(d) {
     vendedores: d.vendedores.map((s) => ({
       nombre: s.nombre, porcentaje: s.porcentaje, dni: s.dni, estadoCivil: s.estadoCivil,
       telefono: s.telefono, email: s.email, facturaNombre: s.facturaNombre,
-      facturaImporte: parseNumber(s.facturaImporte), cuenta: s.cuenta,
+      facturaImporte: parseNumber(s.facturaImporte), direccion: s.direccion, cuenta: s.cuenta,
     })),
     inmueble: {
       direccion: d.direccion, datosRegistrales: d.datosRegistrales, refCatastral: d.refCatastral,
